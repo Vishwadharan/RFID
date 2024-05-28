@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RFID Reader Web Page</title>
+</head>
+<body>
+    <h1>RFID Reader Web Page</h1>
+    
+    <div id="rfidDisplay"></div>
+    <div id="responseDisplay"></div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let previousRFID = null;
+            const scanInterval = setInterval(checkForRFID, 1000);
+
+            function checkForRFID() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const rfidData = urlParams.get('rfid');
+
+                if (rfidData && rfidData !== previousRFID) {
+                    previousRFID = rfidData;
+                    updateRFIDDisplay(rfidData);
+                    sendRFIDData(rfidData);
+                }
+            }
+
+            function updateRFIDDisplay(rfid) {
+                document.getElementById('rfidDisplay').innerText = 'Scanned RFID: ' + rfid;
+            }
+
+            async function fetchDataWithToken(url, token) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+
+                    const data = await response.json();
+                    return data;
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    return null;
+                }
+            }
+
+            async function sendRFIDData(rfid) {
+                try {
+                    // Fetch location data from API
+                    const locationData = await fetchDataWithToken('https://api.gpstrak.in/api/single_dashboard/867111061836976', '5891|IxVEI6EduVUrtTt2MLGGSi6MkuT6KFFak8CtTQ0W6cb4da0d');
+
+                    if (!locationData) {
+                        throw new Error('Failed to fetch location data');
+                    }
+
+                    // Extract latitude and longitude from locationData
+                    const latitude = locationData.data.lattitute;
+                    const longitude = locationData.data.longitute;
+
+                    if (!latitude || !longitude) {
+                        throw new Error('Invalid location data');
+                    }
+
+                    // Construct location string
+                    const locationString = `${latitude},${longitude}`;
+
+                    // Send RFID data to spreadsheet API
+                    const sheetUrl = 'https://script.google.com/macros/s/AKfycbx_VN00KL00lPf6wEVonnNsyN2ReRb2hT91cIk6zWoEsj-dziz2V8qck52_Ktjosh7heg/exec';
+                    const sheetResponse = await fetch(sheetUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ rfid, location: locationString })
+                    });
+
+                    const sheetResponseData = await sheetResponse.text();
+
+                    // Display response from spreadsheet API
+                    document.getElementById('responseDisplay').innerText = 'Response: ' + sheetResponseData;
+
+                    // Prepare data with location for the next API
+                    const dataWithLocation = {
+                        ...JSON.parse(sheetResponseData), // Convert response data to object
+                        LOCATION: `https://www.google.com/maps/place/${latitude},${longitude}`
+                    };
+
+                    // Send response to another API with timestamp
+                    await fetch('https://script.google.com/macros/s/AKfycbwVnkn7uXApLHYw1s2Cok5oRF8qabXKPTW8gTCUrVYsKXygCSW4PJCZ5NFwLs5vapEsCQ/exec', {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Origin': 'sece.ac.in'
+                        },
+                        body: JSON.stringify(dataWithLocation)
+                    });
+
+                    console.log('Request sent successfully');
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
